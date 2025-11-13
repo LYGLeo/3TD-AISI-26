@@ -1,2 +1,2 @@
-# Transformer-based-Time-To-Departure-Model-AAAI-26-
+# 3TD-AISI-26
 To be updated
