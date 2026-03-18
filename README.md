@@ -1,6 +1,26 @@
 # (AAAI'26) Enabling Delayed-Full Charging through Transformer-Based Real-Time-to-Departure  Modeling for EV Battery Longevity
 
-This repository contains the implementation of a Transformer-based real-time-to-event (TTE) model for accurate EV departure prediction from smartphone sensor data.
+This repository provides an implementation of a Transformer-based Time-to-Event (TTE) model for predicting EV departure times using smartphone sensor data.
+
+The model is designed to capture temporal behavioral patterns and contextual signals to enable accurate and real-time departure prediction.
+
+⚠️ Note
+This repository is currently under active development. Improved versions and additional features will be released in future updates.
+
+📊 Dataset
+For evaluation, we collected a dataset using our self-developed mobile application, EVA (EV Analyzer. See https://eva.hanyang.ac.kr).
+This dataset is an in-the-wild human behavioral dataset gathered from real-world EV users via smartphone sensing.
+
+Due to the involvement of human subjects, the dataset is not publicly available and is regulated under IRB (Institutional Review Board) protocols.
+
+📄 More Information
+For detailed descriptions of the dataset, data collection process, and experimental setup, please refer to the paper and supplementary materials available on arXiv:
+https://arxiv.org/pdf/2512.07723
+
+📧 Contact
+For inquiries regarding the dataset or collaboration opportunities, please contact:
+yonggeonlee@hanyang.ac.kr
+
 
 ## Overview
 
