@@ -1,6 +1,4 @@
-# Transformer-based-Time-To-Departure-Model-AAAI-26
-
-## (AAAI'26) Enabling Delayed-Full Charging through Transformer-Based Real-Time-to-Departure  Modeling for EV Battery Longevity
+# (AAAI'26) Enabling Delayed-Full Charging through Transformer-Based Real-Time-to-Departure  Modeling for EV Battery Longevity
 
 This repository contains the implementation of a Transformer-based real-time-to-event (TTE) model for accurate EV departure prediction from smartphone sensor data.
 
