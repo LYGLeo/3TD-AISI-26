@@ -146,4 +146,7 @@ class TransformerTTE(nn.Module):
         # Output S(t|x)
         out = self.output_layer(z).squeeze(-1)
 
+        # Compute survival S(t|x) = prod_{tau <= t} q(tau|x)
+        s_t = torch.cumprod(q_t, dim=1)
+
         return out
