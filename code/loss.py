@@ -1,73 +1,84 @@
 import torch
-import torch.nn.functional as F
 from config import config
 
+
 def ordinal_regression_loss(
-    pred_q,
-    event_time,
-    mask,
-    is_weekend=None,
+    pred_S,                    # (B, T) - predicted S(t), direct survival output
+    event_time,                # (B,) - ground truth event time index
+    is_weekend=None,           # (B,)
     weekend_weight=1.5,
     event_weight=1.5,
-    soft=None,       # Now defaults to config toggle
-    sigma=1.5
+    soft=None,
+    sigma=2.0,
 ):
     """
-    Ordinal regression loss for uncensored time-to-event sequences with optional
-    soft failure supervision (Gaussian smoothing before event time).
+    Discrete-time ordinal regression loss following the paper.
 
-    Args:
-        pred_q: (B, T) - predicted q(t|x), complement hazard
-        event_time: (B,) - ground truth event time index (int)
-        mask: (B,) - binary indicator (1 = uncensored)
-        is_weekend: (B,) - optional, binary (1 = weekend sample)
-        weekend_weight: float - down-weight for weekend samples
-        event_weight: float - weight for failure part
-        soft: bool - if True, apply Gaussian smoothing over failure loss
-        sigma: float - standard deviation for Gaussian smoothing (if soft=True)
+    Model directly outputs S(t), the survival probability at each interval.
 
-    Returns:
-        Scalar loss (mean over valid samples)
+    ℓ_{i,t} = -log S(t)                for t < t*   (survival)
+             = -ω_e log(1 - S(t*))     for t = t*   (failure)
+             = 0                        for t > t*   (masked)
+
+    GSS applies normalized Gaussian weights w_i(t) centered at t*
+    over t <= t* to smooth supervision near the event.
     """
-    # === NEW: use config toggle if soft is None ===
+
     if soft is None:
-        soft = config.get("use_gaussian_smoothing", True)
+        soft = config.get("use_gaussian_smoothing", False)
 
-    B, T = pred_q.shape
-    device = pred_q.device
+    event_weight   = config.get("event_weight", event_weight)
+    weekend_weight = config.get("weekend_weight", weekend_weight)
 
-    # Clamp event_time to avoid out-of-bounds
+    eps = 1e-6
+    B, T = pred_S.shape
+    device = pred_S.device
+
     event_time = event_time.clamp(max=T - 1)
 
-    # Compute log q(t) and log(1 - q(t)) safely
-    log_q = torch.log(torch.clamp(pred_q, min=1e-6, max=1.0 - 1e-6))
-    log_1_minus_q = torch.log(torch.clamp(1 - pred_q, min=1e-6, max=1.0 - 1e-6))
+    # log S(t) and log(1 - S(t))
+    log_S         = torch.log(pred_S.clamp(eps, 1.0 - eps))              # (B, T)
+    log_1_minus_S = torch.log((1.0 - pred_S).clamp(eps, 1.0 - eps))     # (B, T)
 
-    # Time index for all steps
-    time_idx = torch.arange(T, device=device).unsqueeze(0).expand(B, -1)
-    event_time_expanded = event_time.unsqueeze(1)
+    t_idx     = torch.arange(T, device=device).unsqueeze(0).expand(B, -1)  # (B, T)
+    tstar_exp = event_time.unsqueeze(1)                                     # (B, 1)
 
-    # Survival component
-    mask_before_event = (time_idx < event_time_expanded).float()
-    log_survival_part = (log_q * mask_before_event).sum(dim=1)
-
-    # Failure component
+    # -------------------------
+    # Gaussian weights w_i(t)
+    # -------------------------
     if soft:
-        gaussian_mask = torch.exp(-0.5 * ((time_idx - event_time_expanded) / sigma) ** 2)
-        gaussian_mask = gaussian_mask * (time_idx <= event_time_expanded)
-        gaussian_mask = gaussian_mask / (gaussian_mask.sum(dim=1, keepdim=True) + 1e-8)
-        log_failure_part = (log_1_minus_q * gaussian_mask).sum(dim=1)
+        w = torch.exp(-0.5 * ((t_idx - tstar_exp) / sigma) ** 2)
+        w = w * (t_idx <= tstar_exp).float()
+        w = w / (w.sum(dim=1, keepdim=True) + eps)                       # (B, T) normalized
     else:
-        log_failure_part = log_1_minus_q.gather(1, event_time.unsqueeze(1).to(torch.int64)).squeeze(1)
+        w = torch.ones(B, T, device=device)
 
-    # Total negative log-likelihood
-    total_loss = - (log_survival_part + event_weight * log_failure_part)
+    # -------------------------
+    # Survival term: sum_{t<t*} w(t) * log S(t)
+    # -------------------------
+    mask_before = (t_idx < tstar_exp).float()
+    surv_ll = (log_S * w * mask_before).sum(dim=1)                       # (B,)
 
-    # Weekend down-weighting
+    # -------------------------
+    # Failure term: w(t*) * log(1 - S(t*))
+    # -------------------------
+    w_tstar = w.gather(1, event_time.unsqueeze(1)).squeeze(1)            # (B,)
+    fail_ll = w_tstar * log_1_minus_S.gather(
+                  1, event_time.unsqueeze(1)).squeeze(1)                  # (B,)
+
+    ll = surv_ll + event_weight * fail_ll                                 # (B,)
+
+    # -------------------------
+    # Weekend weight
+    # -------------------------
     if is_weekend is not None:
-        weekend_multiplier = torch.where(is_weekend.bool(), weekend_weight, 1.0).to(device)
-        total_loss = (total_loss * weekend_multiplier).sum() / weekend_multiplier.sum()
+        omega_w = torch.where(
+            is_weekend.bool(),
+            pred_S.new_full((B,), weekend_weight),
+            pred_S.new_ones((B,)),
+        )
+        loss = -(ll * omega_w).sum() / omega_w.sum().clamp_min(eps)
     else:
-        total_loss = total_loss.mean()
+        loss = -ll.mean()
 
-    return total_loss
+    return loss
