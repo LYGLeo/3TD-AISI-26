@@ -143,7 +143,7 @@ class TransformerTTE(nn.Module):
         # Transformer encoder
         z = self.transformer_encoder(x)
 
-        # Output q(t|x)
+        # Output S(t|x)
         out = self.output_layer(z).squeeze(-1)
 
         return out
