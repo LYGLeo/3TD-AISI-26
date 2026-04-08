@@ -3,9 +3,9 @@ from config import config
 
 
 def ordinal_regression_loss(
-    pred_S,                    # (B, T) - predicted S(t), direct survival output
-    event_time,                # (B,) - ground truth event time index
-    is_weekend=None,           # (B,)
+    pred_S,                  
+    event_time,              
+    is_weekend=None,      
     weekend_weight=1.5,
     event_weight=1.5,
     soft=None,
@@ -37,40 +37,32 @@ def ordinal_regression_loss(
     event_time = event_time.clamp(max=T - 1)
 
     # log S(t) and log(1 - S(t))
-    log_S         = torch.log(pred_S.clamp(eps, 1.0 - eps))              # (B, T)
-    log_1_minus_S = torch.log((1.0 - pred_S).clamp(eps, 1.0 - eps))     # (B, T)
+    log_S         = torch.log(pred_S.clamp(eps, 1.0 - eps))          
+    log_1_minus_S = torch.log((1.0 - pred_S).clamp(eps, 1.0 - eps))   
 
-    t_idx     = torch.arange(T, device=device).unsqueeze(0).expand(B, -1)  # (B, T)
-    tstar_exp = event_time.unsqueeze(1)                                     # (B, 1)
+    t_idx     = torch.arange(T, device=device).unsqueeze(0).expand(B, -1) 
+    tstar_exp = event_time.unsqueeze(1)                                    
 
-    # -------------------------
-    # Gaussian weights w_i(t)
-    # -------------------------
+    # Gaussian-Smoothed Supervision 
     if soft:
         w = torch.exp(-0.5 * ((t_idx - tstar_exp) / sigma) ** 2)
         w = w * (t_idx <= tstar_exp).float()
-        w = w / (w.sum(dim=1, keepdim=True) + eps)                       # (B, T) normalized
+        w = w / (w.sum(dim=1, keepdim=True) + eps)                     
     else:
         w = torch.ones(B, T, device=device)
 
-    # -------------------------
     # Survival term: sum_{t<t*} w(t) * log S(t)
-    # -------------------------
     mask_before = (t_idx < tstar_exp).float()
-    surv_ll = (log_S * w * mask_before).sum(dim=1)                       # (B,)
-
-    # -------------------------
+    surv_ll = (log_S * w * mask_before).sum(dim=1)                   
+    
     # Failure term: w(t*) * log(1 - S(t*))
-    # -------------------------
-    w_tstar = w.gather(1, event_time.unsqueeze(1)).squeeze(1)            # (B,)
-    fail_ll = w_tstar * log_1_minus_S.gather(
-                  1, event_time.unsqueeze(1)).squeeze(1)                  # (B,)
+    w_tstar = w.gather(1, event_time.unsqueeze(1)).squeeze(1)         
+    fail_ll = w_tstar * log_1_minus_S.gather(1, event_time.unsqueeze(1)).squeeze(1)               
 
-    ll = surv_ll + event_weight * fail_ll                                 # (B,)
+    # Event weight
+    ll = surv_ll + event_weight * fail_ll                              
 
-    # -------------------------
     # Weekend weight
-    # -------------------------
     if is_weekend is not None:
         omega_w = torch.where(
             is_weekend.bool(),
