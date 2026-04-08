@@ -12,12 +12,6 @@ import matplotlib.pyplot as plt
 from tte_transformer import TransformerTTE
 from data import load_preprocessed_data, DepartureDataset, split_generalized, split_personalized_single, build_split
 
-# === Compute survival function from q(t|x_t) ===
-def compute_survival(pred_q):
-    q = pred_q.clamp(min=1e-6, max=1 - 1e-6)
-    S = torch.cumprod(q, dim=1)
-    return S
-
 # === Compute expected time from survival curve ===
 def compute_expected_time(survival):
     time_grid = torch.arange(survival.size(1), dtype=torch.float32, device=survival.device)
@@ -55,9 +49,7 @@ def run_final_test(model, test_loader, config):
             dow_batch = dow_all[active_idx].to(device)
 
             # Forward pass for all active sequences at timestep t
-            q = model(x_batch, abs_batch, dow_batch)  # shape: [len(active_idx), t+1, ?]
-            S = compute_survival(q)  # cumulative survival curve
-
+            S = model(x_batch, abs_batch, dow_batch)  
             s_t = S[:, -1].cpu().numpy()
 
             # Check threshold for each active sequence
@@ -77,8 +69,7 @@ def run_final_test(model, test_loader, config):
             x_full = x_all[idx:idx+1, :, :]
             abs_full = abs_all[idx:idx+1, :]
             dow_full = dow_all[idx].view(1).to(device)
-            q = model(x_full, abs_full, dow_full)
-            S = compute_survival(q)
+            S = model(x_full, abs_full, dow_full)
             expected_map[idx] = compute_expected_time(S)[0].item()
 
     # Collect results
@@ -101,7 +92,7 @@ def run_final_test(model, test_loader, config):
     })
 
     return df
-
+    
 # === Compute MAE by category ===
 def compute_mae_by_dow(df):
     # Filter weekday (DoW=0) and weekend (DoW=1)
